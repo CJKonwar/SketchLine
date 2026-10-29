@@ -1,0 +1,24 @@
+import {THEMES,nodeSize,wrapText,bounds,edgePoints} from './layout.mjs';
+import {connectionGeometry} from './connections.mjs';
+const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
+export function diagramSVG(doc){
+ const theme=THEMES[doc.theme]||THEMES.sage;const details=doc.details!==false;const nodeBox=bounds(doc.nodes,details);
+ const connections=doc.edges.map(edge=>{const p=edgePoints(edge,doc.nodes,doc.layout,details);return p?{edge,geometry:connectionGeometry({...p,layout:p.direction,route:edge.route})}:null;}).filter(Boolean);
+ const xs=[nodeBox.x,nodeBox.x+nodeBox.width],ys=[nodeBox.y,nodeBox.y+nodeBox.height];
+ for(const {edge,geometry:g}of connections){for(const p of g.points){xs.push(p.x);ys.push(p.y);}if(edge.label){const half=Math.max(30,edge.label.length*3.6+7);xs.push(g.labelX-half,g.labelX+half);ys.push(g.labelY-12,g.labelY+12);}}
+ const box={x:Math.min(...xs),y:Math.min(...ys),width:Math.max(...xs)-Math.min(...xs),height:Math.max(...ys)-Math.min(...ys)};const pad=64;const w=box.width+pad*2,h=box.height+pad*2+60;let content='';
+ for(const {edge:e,geometry:g}of connections){const mx=g.labelX,my=g.labelY;content+=`<path d="${g.path}" fill="none" stroke="${theme.edge}" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>`;if(e.label){const half=Math.max(30,e.label.length*3.6+7);content+=`<g><rect x="${mx-half}" y="${my-11}" width="${half*2}" height="22" rx="4" fill="${theme.bg}"/><text x="${mx}" y="${my+4}" text-anchor="middle" font-size="12" fill="${theme.text}">${escape(e.label)}</text></g>`;}}
+ for(const n of doc.nodes){const size=nodeSize(n,details),{width:nw,height:nh}=size;const fill=n.kind==='decision'?theme.decisionFill:theme.fill;const stroke=n.color||(n.kind==='decision'?theme.decisionStroke:theme.stroke);const isDecision=n.kind==='decision';const shape=isDecision?`<path d="M${nw/2},0 L${nw},${nh/2} L${nw/2},${nh} L0,${nh/2} Z"/>`:`<rect width="${nw}" height="${nh}" rx="${n.kind==='start'||n.kind==='end'?nh/2:12}"/>`;
+ const ls=wrapText(n.label,isDecision?20:24),ds=details&&n.description?wrapText(n.description,isDecision?23:28):[];const total=ls.length*20+(ds.length?12+ds.length*17:0);let y=(nh-total)/2+16;
+ let text='';for(const l of ls){text+=`<text x="${nw/2}" y="${y}" text-anchor="middle" font-size="15" font-weight="600" fill="${stroke}">${escape(l)}</text>`;y+=20;}if(ds.length){y+=8;for(const l of ds){text+=`<text x="${nw/2}" y="${y}" text-anchor="middle" font-size="12" fill="${theme.text}">${escape(l)}</text>`;y+=17;}}
+ content+=`<g id="${escape(n.id)}" transform="translate(${n.x},${n.y})"><g fill="${fill}" stroke="${stroke}" stroke-width="1.6">${shape}</g>${text}</g>`;
+ }
+ return `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(w)}" height="${Math.ceil(h)}" viewBox="0 0 ${Math.ceil(w)} ${Math.ceil(h)}" role="img" aria-label="${escape(doc.title)}"><title>${escape(doc.title)}</title><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="${theme.edge}"/></marker></defs><rect width="100%" height="100%" fill="${theme.bg}"/><g font-family="Arial, sans-serif"><text x="${w/2}" y="44" text-anchor="middle" font-size="20" font-weight="600" fill="${theme.text}">${escape(doc.title)}</text><g transform="translate(${pad-box.x},${pad+60-box.y})">${content}</g></g></svg>`;
+}
+export function filename(title){return (title||'diagram').replace(/[^\p{L}\p{N}\s_-]/gu,'').trim().replace(/\s+/g,'-').slice(0,80)||'diagram';}
+export function download(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+export async function exportDiagram(doc,format){
+ if(format==='json'){download(new Blob([JSON.stringify({format:'sketchline',version:1,diagram:doc},null,2)],{type:'application/json'}),filename(doc.title)+'.sketchline.json');return;}
+ const svg=diagramSVG(doc);if(format==='svg'){download(new Blob([svg],{type:'image/svg+xml'}),filename(doc.title)+'.svg');return;}
+ const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));try{const image=new Image();await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(new Error('Could not render this diagram. Try SVG export.'));image.src=url;});const scale=Math.min(2,12000/Math.max(image.width,image.height));const canvas=document.createElement('canvas');canvas.width=image.width*scale;canvas.height=image.height*scale;canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!blob)throw new Error('The image is too large. Try SVG export.');download(blob,filename(doc.title)+'.png');}finally{URL.revokeObjectURL(url);}
+}

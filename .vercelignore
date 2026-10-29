@@ -1,0 +1,23 @@
+# Upload only files needed to build the public application.
+/*
+!/.vercelignore
+!/vercel.json
+!/package.json
+!/package-lock.json
+!/index.html
+!/vite.config.js
+!/src/
+!/src/**
+!/shared/
+!/shared/**
+!/public/
+!/public/**
+!/scripts/
+!/scripts/**
+# Never upload credentials, even if a file is later added inside an allowed folder.
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/node_modules/**
+**/.DS_Store
